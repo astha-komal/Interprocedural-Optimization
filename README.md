@@ -1,6 +1,6 @@
 # Interprocedural Whole-Program Optimizer
 
-BCSE307 — Compiler Design | Review 2
+BCSE307 — Compiler Design 
 
 Builds a call graph for a program and applies interprocedural optimizations
 (function inlining, constant propagation across calls) guided by a
