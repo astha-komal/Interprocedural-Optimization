@@ -1,19 +1,14 @@
 """
 pipeline_driver.py
-Owner: Member 1 (Project Lead / Integration Coordinator)
 
 PURPOSE
 -------
-This file is Member 1's real technical deliverable for Review 2. It does NOT
-implement the core algorithms (parsing, call-graph heuristics, inlining,
-constant propagation) -- those belong to Members 2 and 3. Instead it defines
+This file defines
 the STAGE INTERFACES (the data contracts every module must produce/consume)
 and wires the stages into one runnable, end-to-end pipeline.
 
-This is exactly what "Integration and Functional Prototype" (1.5 marks) and
+This is exactly what "Integration and Functional Prototype"and
 the "Module integration, data exchange, end-to-end prototype execution"
-slide need: proof that the modules actually talk to each other, not just
-separate diagrams.
 
 Each teammate's job is to replace the body of their stage function with
 their real logic WITHOUT changing its input/output types -- that is the
@@ -65,7 +60,7 @@ class OptimizedIR:
 
 
 # ---------------------------------------------------------------------------
-# STAGE 1 -- FRONTEND ADAPTER (wraps Member 2's parser / Clang step)
+# STAGE 1 -- FRONTEND ADAPTER 
 # ---------------------------------------------------------------------------
 
 def run_frontend(source_path: str) -> ProgramIR:
@@ -162,7 +157,6 @@ def run_optimization(program_ir: ProgramIR, analysis: AnalysisResult) -> Optimiz
 
 # ---------------------------------------------------------------------------
 # INTEGRATION DIAGRAM -- auto-generate the call-graph visualization.
-# This PNG is part of Member 1's "integration diagram" evidence for viva.
 # ---------------------------------------------------------------------------
 
 def visualize_call_graph(cg: CallGraph, out_path: str = "call_graph.png") -> str:
@@ -180,7 +174,6 @@ def visualize_call_graph(cg: CallGraph, out_path: str = "call_graph.png") -> str
 
 # ---------------------------------------------------------------------------
 # END-TO-END PIPELINE -- this function IS the "functional prototype".
-# Run it live during viva: `python pipeline_driver.py sample.c`
 # ---------------------------------------------------------------------------
 
 def run_pipeline(source_path: str) -> OptimizedIR:
