@@ -3,16 +3,8 @@ pipeline_driver.py
 
 PURPOSE
 -------
-This file defines
-the STAGE INTERFACES (the data contracts every module must produce/consume)
+This file defines the STAGE INTERFACES (the data contracts every module must produce/consume)
 and wires the stages into one runnable, end-to-end pipeline.
-
-This is exactly what "Integration and Functional Prototype"and
-the "Module integration, data exchange, end-to-end prototype execution"
-
-Each teammate's job is to replace the body of their stage function with
-their real logic WITHOUT changing its input/output types -- that is the
-whole point of defining the interfaces up front.
 """
 
 import re
@@ -23,11 +15,17 @@ from typing import Dict, List, Set
 import networkx as nx
 import matplotlib.pyplot as plt
 
+# Import our advanced real-world optimization engine
+from ipo_engine import (
+    dead_procedure_elimination, 
+    whole_program_inlining, 
+    interprocedural_constant_propagation, 
+    interprocedural_pointer_analysis
+)
+
 
 # ---------------------------------------------------------------------------
 # STAGE INTERFACES -- the "contracts" between modules.
-# Everyone codes against these shapes; this is what makes integration possible
-# even when different members are at different stages of implementation.
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -64,13 +62,6 @@ class OptimizedIR:
 # ---------------------------------------------------------------------------
 
 def run_frontend(source_path: str) -> ProgramIR:
-    """
-    Integration adapter around Member 2's frontend.
-    Expects Clang to emit LLVM IR (.ll) for the given C/C++ source.
-    Falls back to reading a pre-generated .ll file if Clang isn't installed
-    in the current environment, so the pipeline still runs end-to-end
-    during development and live demos.
-    """
     ll_path = os.path.splitext(source_path)[0] + ".ll"
 
     if not os.path.exists(ll_path):
@@ -90,9 +81,6 @@ def run_frontend(source_path: str) -> ProgramIR:
 
 # ---------------------------------------------------------------------------
 # STAGE 2 -- CALL GRAPH CONSTRUCTION
-# Reference implementation so the pipeline is demoable NOW.
-# Member 3 should replace this with the team's real call-graph algorithm,
-# keeping the same input (ProgramIR) -> output (CallGraph) contract.
 # ---------------------------------------------------------------------------
 
 FUNC_DEF_RE = re.compile(r"^define\s+.*?@([A-Za-z_][A-Za-z0-9_]*)\s*\(", re.MULTILINE)
@@ -104,7 +92,6 @@ def build_call_graph(program_ir: ProgramIR) -> CallGraph:
     graph = nx.DiGraph()
     graph.add_nodes_from(functions)
 
-    # split IR into per-function blocks so each call is attributed to its caller
     blocks = re.split(r"(?=^define\s)", program_ir.ir_text, flags=re.MULTILINE)
     for block in blocks:
         header = FUNC_DEF_RE.search(block)
@@ -120,9 +107,6 @@ def build_call_graph(program_ir: ProgramIR) -> CallGraph:
 
 # ---------------------------------------------------------------------------
 # STAGE 3 -- INTERPROCEDURAL ANALYSIS
-# Placeholder for Member 3's constant-propagation / inlining-candidate logic.
-# Replace the BODY only -- keep the (CallGraph, ProgramIR) -> AnalysisResult
-# contract identical so the rest of the pipeline keeps working unmodified.
 # ---------------------------------------------------------------------------
 
 def run_interprocedural_analysis(cg: CallGraph, program_ir: ProgramIR) -> AnalysisResult:
@@ -142,17 +126,33 @@ def run_interprocedural_analysis(cg: CallGraph, program_ir: ProgramIR) -> Analys
 
 
 # ---------------------------------------------------------------------------
-# STAGE 4 -- OPTIMIZATION + CODEGEN
-# Placeholder that reports what WOULD be optimized. Member 3/Member 2 plug
-# the real IR-rewriting logic in here, keeping the same input/output types.
+# STAGE 4 -- OPTIMIZATION + CODEGEN (Updated with Real-World DPE Pass)
 # ---------------------------------------------------------------------------
 
 def run_optimization(program_ir: ProgramIR, analysis: AnalysisResult) -> OptimizedIR:
+    # 1. Dead Procedure Elimination
+    dpe_result = dead_procedure_elimination(program_ir.ir_text, analysis.unreachable_functions)
+    
+    # 2. Whole-Program Inlining
+    inlining_result = whole_program_inlining(dpe_result.ir_text, analysis.inlinable_call_sites)
+    
+    # 3. Interprocedural Constant Propagation
+    icp_result = interprocedural_constant_propagation(inlining_result.ir_text)
+    
+    # 4. Interprocedural Pointer Analysis
+    ptr_result = interprocedural_pointer_analysis(icp_result.ir_text)
+    
     stats = {
         "functions_marked_inlinable": len(analysis.inlinable_call_sites),
         "functions_marked_dead": len(analysis.unreachable_functions),
+        "dead_procedures_eliminated": dpe_result.stats["dead_procedures_eliminated"],
+        "functions_inlined": inlining_result.stats["functions_inlined"],
+        "constants_propagated": icp_result.stats["constants_propagated"],
+        "pointers_tracked": ptr_result.stats["pointers_tracked"],
+        "alias_relations_analyzed": ptr_result.stats["alias_relations_analyzed"]
     }
-    return OptimizedIR(ir_text=program_ir.ir_text, stats=stats)
+    
+    return OptimizedIR(ir_text=ptr_result.ir_text, stats=stats)
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +173,7 @@ def visualize_call_graph(cg: CallGraph, out_path: str = "call_graph.png") -> str
 
 
 # ---------------------------------------------------------------------------
-# END-TO-END PIPELINE -- this function IS the "functional prototype".
+# END-TO-END PIPELINE
 # ---------------------------------------------------------------------------
 
 def run_pipeline(source_path: str) -> OptimizedIR:
@@ -182,17 +182,17 @@ def run_pipeline(source_path: str) -> OptimizedIR:
 
     print("[2/4] Building call graph")
     cg = build_call_graph(program_ir)
-    print(f"       functions found: {list(cg.graph.nodes)}")
-    print(f"       call edges:      {list(cg.graph.edges)}")
+    print(f"        functions found: {list(cg.graph.nodes)}")
+    print(f"        call edges:      {list(cg.graph.edges)}")
 
     print("[3/4] Running interprocedural analysis")
     analysis = run_interprocedural_analysis(cg, program_ir)
-    print(f"       inlinable candidates:   {analysis.inlinable_call_sites}")
-    print(f"       unreachable functions:  {analysis.unreachable_functions}")
+    print(f"        inlinable candidates:   {analysis.inlinable_call_sites}")
+    print(f"        unreachable functions:  {analysis.unreachable_functions}")
 
     print("[4/4] Applying optimizations + generating output")
     result = run_optimization(program_ir, analysis)
-    print(f"       stats: {result.stats}")
+    print(f"        stats: {result.stats}")
 
     img_path = visualize_call_graph(cg)
     print(f"Call graph diagram saved to: {img_path}")
