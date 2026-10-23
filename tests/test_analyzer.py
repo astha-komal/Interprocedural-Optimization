@@ -327,3 +327,86 @@ def test_T29_float_parameter_inlining_keeps_real_division():
            'int main() { printf("%.1f %.1f\\n", half(5), half(9)); half(1); return 0; }')
     optimized = analyze_program(src, entry="main")["optimized_program"]["code"]
     assert run_program(src)["stdout"] == run_program(optimized)["stdout"] == "2.5 4.5\n"
+
+
+# ---------------------------------------------------------------------------
+# T30+ -- Cycle classification and safe optimization in/around cycles
+# ---------------------------------------------------------------------------
+
+def test_T30_cycle_classification_direct_mutual_and_indirect():
+    """T30: Direct recursion, mutual recursion, and indirect (3-cycle) recursion
+    are classified with explicit cycle paths and statuses."""
+    src = (
+        "int fa(int n); int fb(int n); int fc(int n);\n"
+        "int fa(int n) { if (n <= 0) return 0; return fb(n - 1); }\n"
+        "int fb(int n) { if (n <= 0) return 0; return fc(n - 1); }\n"
+        "int fc(int n) { if (n <= 0) return 0; return fa(n - 1); }\n"
+        "int self_rec(int x) { if (x <= 0) return 0; return self_rec(x - 1); }\n"
+        "int main() { return fa(3) + self_rec(2); }\n"
+    )
+    result = analyze_program(src, entry="main")
+    cycle_analysis = result["cycle_analysis"]
+    types = {c["type"] for c in cycle_analysis["cycles"]}
+    assert "INDIRECT_RECURSION" in types
+    assert "DIRECT_RECURSION" in types
+
+    ind = next(c for c in cycle_analysis["cycles"] if c["type"] == "INDIRECT_RECURSION")
+    assert ind["functions"] == ["fa", "fb", "fc"]
+    assert ind["status"] == "REACHABLE"
+    assert "fa -> fb -> fc -> fa" in ind["path_display"]
+
+
+def test_T31_dead_recursive_cycle_eliminated():
+    """T31: An unreachable recursive cycle (dead mutual recursion) is safely
+    detected and completely eliminated from the generated code."""
+    src = (
+        "int dead_even(int n); int dead_odd(int n);\n"
+        "int dead_even(int n) { if (n == 0) return 1; return dead_odd(n - 1); }\n"
+        "int dead_odd(int n) { if (n == 0) return 0; return dead_even(n - 1); }\n"
+        "int main() { return 100; }\n"
+    )
+    result = analyze_program(src, entry="main")
+    assert "dead_even" in result["unreachable_functions"]
+    assert "dead_odd" in result["unreachable_functions"]
+
+    cycle_analysis = result["cycle_analysis"]
+    dead_cycle = next(c for c in cycle_analysis["cycles"] if c["type"] == "MUTUAL_RECURSION")
+    assert dead_cycle["status"] == "DEAD_CODE"
+
+    opt = result["optimized_program"]
+    removed_names = [r["name"] for r in opt["removed_functions"]]
+    assert "dead_even" in removed_names
+    assert "dead_odd" in removed_names
+    assert "int dead_even" not in opt["code"]
+    assert "int dead_odd" not in opt["code"]
+
+
+def test_T32_non_recursive_helper_inlined_inside_recursive_function():
+    """T32: Non-recursive helper functions called inside a recursive cycle
+    are safely inlined, while recursive calls are protected from infinite expansion."""
+    src = (
+        "int square(int x) { return x * x; }\n"
+        "int rec_sum(int n) {\n"
+        "    if (n <= 0) return 0;\n"
+        "    return square(n) + rec_sum(n - 1);\n"
+        "}\n"
+        "int main() {\n"
+        "    int s = square(3);\n"
+        "    return rec_sum(s);\n"
+        "}\n"
+    )
+    result = analyze_program(src, entry="main")
+    opt = result["optimized_program"]
+
+    # Verify that square was inlined inside rec_sum
+    inlined_in_rec = [
+        t for t in opt["transformations"]
+        if t["type"] == "INLINE" and t["caller"] == "rec_sum" and t["callee"] == "square"
+    ]
+    assert len(inlined_in_rec) == 1
+    # Verify recursive call rec_sum(n - 1) is still intact (never infinitely inlined)
+    assert "rec_sum(n - 1)" in opt["code"]
+    # Semantic preservation: both original and optimized run and produce the exact same exit code
+    a, b = run_program(src), run_program(opt["code"])
+    assert a["status"] == b["status"] == "ok"
+    assert a["exit_code"] == b["exit_code"]

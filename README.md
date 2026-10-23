@@ -103,8 +103,8 @@ If the file has compile errors, the errors are printed and nothing else runs.
 
 ## 5. Run the tests
 
-The regression suite is `tests/test_analyzer.py` (29 tests: call-graph detection, recursion, pointers,
-constant propagation, inlining, compile-error detection, running programs and output comparison).
+The regression suite is `tests/test_analyzer.py` (32 tests: call-graph detection, direct/mutual/indirect recursion cycles, dead cycle elimination, pointers,
+constant propagation, inlining in and around cycles, compile-error detection, running programs and output comparison).
 
 ```bash
 python -m pytest tests -v
@@ -112,7 +112,7 @@ python -m pytest tests -v
 
 (or `py -m pytest tests -v` on Windows if `python` is not recognized)
 
-Expected ending: `29 passed`.
+Expected ending: `32 passed`.
 
 No pytest? This runs the same tests without it:
 
@@ -163,16 +163,19 @@ C source
   ├─ syntax_check      compile errors?  → stop and show the errors
   │
   ├─ extract_functions → build_call_graph (DIRECT / POINTER-REFINED / POINTER / TYPE-FALLBACK edges)
-  ├─ demand_driven_analysis (reachability)  → find_sccs (recursion)
-  ├─ constant_propagation → optimization_analysis (INLINE / DO NOT INLINE)
+  ├─ demand_driven_analysis (reachability)  → find_sccs & classify_cycles (direct/mutual/indirect cycles)
+  ├─ constant_propagation → optimization_analysis (INLINE / DO NOT INLINE with cycle-breaking rule)
   └─ generate_optimized_code
         1. constant-fold calls with constant arguments      square(5)  →  25
         2. inline functions marked INLINE                   add(n, 2)  →  (n + 2)
-        3. remove unreachable / fully inlined functions
-```
+        3. inline non-recursive helpers inside recursive functions
+        4. remove unreachable functions (including dead recursive cycles)
 
-The optimizer is deliberately conservative. It never touches recursive functions, comments or strings,
-and it keeps any function that is still referenced (for example through a function pointer).
+Cycle Handling Policy:
+- Cycle Detection: Tarjan's SCC classifies cycles into DIRECT (self-loop), MUTUAL (2-node), and INDIRECT (3+ node) recursion.
+- Reachability Filter: Live cycles reachable from `main()` are preserved. Unreachable dead cycles are eliminated completely.
+- Cycle-Breaking Inlining: Recursive calls are never inlined into themselves or their mutual recursion partners, preventing infinite compile-time expansion. Non-recursive helpers called inside recursive functions remain fully eligible for inlining.
+- Safety: Comments, strings, and referenced function pointers are always preserved.
 
 ## 8. REST API
 

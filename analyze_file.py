@@ -20,7 +20,7 @@ import argparse
 import json
 import sys
 
-from analyzer import analyze_program, print_call_graph, print_optimized_code
+from analyzer import analyze_program, print_call_graph, print_optimized_code, print_cycle_analysis
 from analyzer.call_graph import build_call_graph
 from analyzer.extraction import extract_functions
 from analyzer.syntax_check import check_syntax, format_errors
@@ -54,6 +54,8 @@ def human_readable_report(code: str, entry: str) -> dict:
     for scc in results["sccs"]:
         print(" ", sorted(scc))
     print("Recursive functions:", results["recursive_functions"])
+
+    print_cycle_analysis(results.get("cycle_analysis", {}))
 
     print("\nConstant Propagation Results:")
     if results["constant_propagation"]:

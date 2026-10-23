@@ -326,9 +326,9 @@ def _make_inline_handler(info):
 # Dead-function removal
 # ---------------------------------------------------------------------------
 def _strip_prototypes(gap: str, names) -> str:
-    for n in names:
+    for n in sorted(names):
         gap = re.sub(
-            rf"^[ \t]*[A-Za-z_][\w \t\*]*?\b{re.escape(n)}\s*\([^;{{}}]*\)\s*;[ \t]*\n?",
+            rf"(?:(?<=^)|(?<=[;\n]))[ \t]*[A-Za-z_][\w \t\*]*?\b{re.escape(n)}\s*\([^;{{}}]*\)\s*;[ \t]*\n?",
             "", gap, flags=re.M,
         )
     return gap

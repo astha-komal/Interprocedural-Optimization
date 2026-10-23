@@ -18,7 +18,7 @@ hands back to a frontend.
 from .extraction import extract_functions
 from .call_graph import build_call_graph
 from .reachability import demand_driven_analysis
-from .scc import find_sccs
+from .scc import find_sccs, classify_cycles
 from .optimization import constant_propagation, optimization_analysis
 from .codegen import generate_optimized_code
 
@@ -33,8 +33,9 @@ def analyze_program(code: str, entry: str = "main") -> dict:
     # 3. demand_driven_analysis()
     reachable = demand_driven_analysis(graph, entry)
 
-    # 4. find_sccs()
+    # 4. find_sccs() & classify_cycles()
     sccs, recursive_functions = find_sccs(graph)
+    cycle_analysis = classify_cycles(graph, sccs, reachable)
 
     # 5. optimization_analysis()  (constant_propagation runs first, feeds the heuristic)
     cp_results = constant_propagation(functions, graph)
@@ -69,6 +70,7 @@ def analyze_program(code: str, entry: str = "main") -> dict:
         "unreachable_functions": sorted(all_names - reachable),
         "sccs": [sorted(s) for s in sccs],
         "recursive_functions": sorted(recursive_functions),
+        "cycle_analysis": cycle_analysis,
         "constant_propagation": cp_results,
         "optimization_analysis": opt_results,
         "summary": {
@@ -80,6 +82,8 @@ def analyze_program(code: str, entry: str = "main") -> dict:
             "unresolved_indirect_calls": len(graph.unresolved),
             "reachable_count": len(reachable),
             "recursive_function_count": len(recursive_functions),
+            "cycle_count": len(cycle_analysis["cycles"]),
+            "dead_cycle_count": cycle_analysis["summary"]["dead_cycles"],
             "inline_recommended_count": sum(
                 1 for r in opt_results.values() if r["decision"] == "INLINE"
             ),
@@ -88,11 +92,27 @@ def analyze_program(code: str, entry: str = "main") -> dict:
     }
 
 
-# 6. print_call_graph()
+# 6. print_cycle_analysis()
+def print_cycle_analysis(cycle_analysis: dict) -> None:
+    cycles = cycle_analysis.get("cycles", []) if cycle_analysis else []
+    if not cycles:
+        print("\nCycle Analysis: No recursion or cycles detected (Call graph is acyclic / DAG).")
+        return
+
+    print("\n" + "=" * 70)
+    print("Call Graph Cycle Analysis & Recursion Handling")
+    print("=" * 70)
+    for c in cycles:
+        c_type = c["type"].replace("_", " ")
+        print(f"  [{c_type:18s}] {c['path_display']}  [{c['status']}]")
+        print(f"    Treatment: {c['treatment']}")
+
+
+# 7. print_call_graph()
 def print_call_graph(graph) -> None:
     print("Call Graph Edges:")
     for caller, callee, edge_type in sorted(graph.edges):
-        arrow = "→"  # →
+        arrow = "->"
         print(f"  {caller} {arrow} {callee} [{edge_type}]")
     if graph.unresolved:
         print("Unresolved indirect calls:")
