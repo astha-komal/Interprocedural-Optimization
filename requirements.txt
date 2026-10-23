@@ -1,0 +1,5 @@
+# Packages needed to run the dashboard / API and the tests.
+# Install with:  python -m pip install -r requirements.txt
+fastapi
+uvicorn
+pytest

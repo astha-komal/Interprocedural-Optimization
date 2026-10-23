@@ -1,0 +1,39 @@
+======================================================================
+Hybrid Interprocedural Call Graph Analyzer -- Demonstration Run
+======================================================================
+
+Extracted 6 functions: ['even', 'increment', 'main', 'odd', 'recursive', 'square']
+
+Call Graph Edges:
+  even → odd [DIRECT]
+  main → even [DIRECT]
+  main → increment [POINTER-REFINED]
+  main → recursive [DIRECT]
+  main → square [DIRECT]
+  main → square [POINTER-REFINED]
+  odd → even [DIRECT]
+  recursive → recursive [DIRECT]
+
+Reachable from main(): ['even', 'increment', 'main', 'odd', 'recursive', 'square']
+Unreachable functions: []
+
+Strongly Connected Components:
+  ['even', 'odd']
+  ['increment']
+  ['recursive']
+  ['square']
+  ['main']
+Recursive functions: ['even', 'odd', 'recursive']
+
+Constant Propagation Results:
+  main calls square(5)  =>  5 * 5 = 25
+
+Inline Recommendations:
+  even         score=0   -> DO NOT INLINE  (Recursive function - skipped from inline recommendation stage)
+  increment    score=3   -> DO NOT INLINE  (Function size <= 20 lines (3 lines) (+3))
+  main         score=3   -> DO NOT INLINE  (Function size <= 20 lines (12 lines) (+3))
+  odd          score=0   -> DO NOT INLINE  (Recursive function - skipped from inline recommendation stage)
+  recursive    score=0   -> DO NOT INLINE  (Recursive function - skipped from inline recommendation stage)
+  square       score=13  -> INLINE         (Called with constant arguments (+5); Constant propagation possible (+5); Function size <= 20 lines (3 lines) (+3))
+
+Summary: {'function_count': 6, 'edge_count': 8, 'indirect_call_edge_count': 2, 'unresolved_indirect_calls': 0, 'reachable_count': 6, 'recursive_function_count': 3, 'inline_recommended_count': 1}

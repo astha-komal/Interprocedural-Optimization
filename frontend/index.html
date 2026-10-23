@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interprocedural Code Optimizer</title>
+<style>
+  :root { --bg:#fafaf8; --fg:#1d2021; --muted:#5f6368; --line:#d9d9d4; --panel:#fff;
+          --code-bg:#f1f1ee; --ok:#1b7a3a; --bad:#b3261e; --accent:#1a4e8a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#17181a; --fg:#e6e6e3; --muted:#9aa0a6; --line:#34363a; --panel:#1f2023;
+            --code-bg:#121315; --ok:#5fd187; --bad:#ff8a80; --accent:#8ab4f8; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:960px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:1.4rem; margin:0 0 4px; }
+  h2 { font-size:1.05rem; margin:0 0 8px; }
+  p.sub { margin:0 0 20px; color:var(--muted); }
+  textarea { width:100%; min-height:300px; padding:12px; resize:vertical; tab-size:4;
+             font:14px/1.45 ui-monospace, Consolas, Menlo, monospace;
+             background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:6px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:10px 0 0; }
+  button, .filebtn { font:inherit; padding:7px 14px; border:1px solid var(--line); border-radius:6px;
+                     background:var(--panel); color:var(--fg); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  @media (prefers-color-scheme: dark) { button.primary { color:#0b1b30; } }
+  button:disabled { opacity:.55; cursor:wait; }
+  button:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus-visible
+    { outline:2px solid var(--accent); outline-offset:2px; }
+  .bar label { color:var(--muted); font-size:.9rem; }
+  input[type=text] { width:110px; padding:6px 8px; font:inherit; background:var(--panel);
+                     color:var(--fg); border:1px solid var(--line); border-radius:6px; }
+  #file { display:none; }
+  #status { color:var(--muted); font-size:.9rem; }
+  #status.error { color:var(--bad); }
+  section.out { margin-top:28px; }
+  pre { margin:0; padding:12px; overflow:auto; max-height:480px; white-space:pre;
+        font:13.5px/1.45 ui-monospace, Consolas, Menlo, monospace;
+        background:var(--code-bg); border:1px solid var(--line); border-radius:6px; }
+  .tests-head { font-size:1.6rem; font-weight:700; }
+  .tests-head.ok { color:var(--ok); } .tests-head.bad { color:var(--bad); }
+  details { margin-top:6px; } summary { cursor:pointer; color:var(--muted); }
+  ul.tests { list-style:none; margin:8px 0 0; padding:0; font:13.5px/1.6 ui-monospace, Consolas, monospace; }
+  ul.tests .passed::before { content:"PASSED  "; color:var(--ok); }
+  ul.tests .failed::before { content:"FAILED  "; color:var(--bad); }
+  .head-row { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  .head-row .bar { margin:0; }
+  .errbox { border-color:var(--bad); max-height:none; white-space:pre-wrap; }
+  #errorsTitle { color:var(--bad); }
+  .verdict { padding:10px 14px; border-radius:6px; border:1px solid var(--line); font-weight:600; margin-bottom:12px; }
+  .verdict.ok { color:var(--ok); border-color:var(--ok); }
+  .verdict.bad { color:var(--bad); border-color:var(--bad); }
+  .verdict.warn { color:var(--muted); }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .cols h3 { font-size:.95rem; margin:0 0 2px; }
+  .cols p { margin:0 0 6px; color:var(--muted); font-size:.85rem; }
+  .cols pre { max-height:300px; }
+  #runMeta.error { color:var(--bad); }
+  @media (max-width:640px) { .cols { grid-template-columns:1fr; } }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Interprocedural Code Optimizer</h1>
+  <p class="sub">Paste or type C code, then analyze it. You get the test results, the full analysis report and the optimized code.</p>
+
+  <label for="code" class="sub" style="display:block;margin-bottom:6px">C source code</label>
+  <textarea id="code" spellcheck="false" placeholder="Paste or type code here..."></textarea>
+
+  <div class="bar">
+    <button id="run" class="primary">Analyze and optimize</button>
+    <button id="runCode" type="button">Run code</button>
+    <button id="sample" type="button">Load sample</button>
+    <label class="filebtn" for="file">Open .c file</label>
+    <input id="file" type="file" accept=".c,.h,.txt">
+    <button id="clear" type="button">Clear</button>
+    <label for="entry">Entry function</label>
+    <input id="entry" type="text" value="main">
+    <span id="status" role="status"></span>
+  </div>
+
+  <section id="runOut" class="out" hidden>
+    <h2>Program output</h2>
+    <p id="runMeta" class="sub" style="margin:0 0 6px"></p>
+    <pre id="runText"></pre>
+  </section>
+
+  <section id="errors" class="out" hidden>
+    <h2 id="errorsTitle"></h2>
+    <p class="sub" style="margin-bottom:8px">Fix these and analyze again. No test results, report or optimized code are shown for code that does not compile.</p>
+    <pre id="errorList" class="errbox"></pre>
+  </section>
+
+  <div id="results" hidden>
+    <section class="out">
+      <h2>Test results</h2>
+      <div id="testsHead" class="tests-head"></div>
+      <details><summary>Show each test</summary><ul id="testList" class="tests"></ul></details>
+    </section>
+
+    <section class="out">
+      <h2>Analysis report</h2>
+      <pre id="report"></pre>
+    </section>
+
+    <section class="out">
+      <div class="head-row">
+        <h2>Optimized code</h2>
+        <div class="bar">
+          <button id="compare" type="button" class="primary">Run optimized &amp; compare outputs</button>
+          <button id="copy" type="button">Copy</button>
+          <button id="download" type="button">Download .c</button>
+        </div>
+      </div>
+      <pre id="optimized"></pre>
+      <div id="cmp" hidden style="margin-top:16px">
+        <h2>Output comparison</h2>
+        <div id="verdict" class="verdict"></div>
+        <div class="cols">
+          <div><h3>Original code output</h3><p id="origMeta"></p><pre id="origOut"></pre></div>
+          <div><h3>Optimized code output</h3><p id="optMeta"></p><pre id="optOut"></pre></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+  // Same address as the backend when served by it; direct address if this file is opened from disk.
+  const API = location.protocol === "file:" ? "http://localhost:8000" : "";
+  const $ = id => document.getElementById(id);
+  const statusEl = $("status");
+  let analyzedCode = "", analyzedEntry = "main";   // what the optimized code on screen was made from
+
+  async function post(path, body) {
+    const res = await fetch(API + path, { method: "POST", headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Request failed");
+    return data;
+  }
+  const BACKEND_DOWN = "Cannot reach the backend. Start it with: uvicorn api:app --reload --port 8000";
+
+  function runSummary(run) {
+    const bits = [];
+    if (run.exit_code !== null && run.exit_code !== undefined) bits.push("exit code " + run.exit_code);
+    bits.push("run with " + run.runner);
+    return bits.join(" · ");
+  }
+  function runText(run) {
+    let text = run.stdout.length ? run.stdout : (run.status === "ok" ? "(the program printed nothing)" : "");
+    if (run.error) text += (text && !text.endsWith("\n") ? "\n" : "") + "\n" + run.error;
+    return text;
+  }
+
+  async function runCode() {
+    const code = $("code").value;
+    if (!code.trim()) { setStatus("Enter some C code first.", true); return; }
+    $("runCode").disabled = true;
+    setStatus("Running...");
+    try {
+      const data = await post("/execute", { source_code: code });
+      if (!data.ok) { showCompileErrors(data); setStatus("Code has errors.", true); return; }
+      $("errors").hidden = true;
+      $("runMeta").textContent = runSummary(data.run);
+      $("runMeta").className = "sub" + (data.run.status === "ok" ? "" : " error");
+      $("runText").textContent = runText(data.run);
+      $("runOut").hidden = false;
+      setStatus(data.run.status === "ok" ? "Done." : "The program did not finish normally.", data.run.status !== "ok");
+    } catch (err) {
+      setStatus(err instanceof TypeError ? BACKEND_DOWN : err.message, true);
+    } finally { $("runCode").disabled = false; }
+  }
+
+  async function compareOutputs() {
+    if (!analyzedCode) { setStatus("Analyze the code first.", true); return; }
+    $("compare").disabled = true;
+    setStatus("Running original and optimized code...");
+    try {
+      const data = await post("/compare", { source_code: analyzedCode, entry: analyzedEntry });
+      if (!data.ok) { showCompileErrors(data); return; }
+      const v = $("verdict");
+      v.textContent = data.verdict + (data.match && !data.changed ? " (No transformation was applied, so both programs are identical.)" : "");
+      v.className = "verdict " + (data.match === true ? "ok" : data.match === false ? "bad" : "warn");
+      $("origMeta").textContent = runSummary(data.original);
+      $("optMeta").textContent = runSummary(data.optimized);
+      $("origOut").textContent = runText(data.original);
+      $("optOut").textContent = runText(data.optimized);
+      $("cmp").hidden = false;
+      $("cmp").scrollIntoView({ behavior: "smooth", block: "nearest" });
+      setStatus("Done.");
+    } catch (err) {
+      setStatus(err instanceof TypeError ? BACKEND_DOWN : err.message, true);
+    } finally { $("compare").disabled = false; }
+  }
+
+  function setStatus(msg, isError) {
+    statusEl.textContent = msg;
+    statusEl.className = isError ? "error" : "";
+  }
+
+  async function analyze() {
+    const code = $("code").value;
+    const entry = $("entry").value.trim() || "main";
+    if (!code.trim()) { setStatus("Enter some C code first.", true); return; }
+    $("run").disabled = true;
+    setStatus("Analyzing...");
+    try {
+      const res = await fetch(API + "/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_code: code, entry })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Request failed");
+      if (data.ok) { analyzedCode = code; analyzedEntry = entry; $("cmp").hidden = true; }
+      show(data);
+      setStatus(data.ok ? "Done." : "Code has errors.", !data.ok);
+    } catch (err) {
+      setStatus(err instanceof TypeError
+        ? "Cannot reach the backend. Start it with: uvicorn api:app --reload --port 8000"
+        : err.message, true);
+    } finally {
+      $("run").disabled = false;
+    }
+  }
+
+  function showCompileErrors(data) {
+    $("results").hidden = true;
+    $("runOut").hidden = true;
+    const n = data.errors.length;
+    $("errorsTitle").textContent = "Compilation failed: " + n + (n === 1 ? " error" : " errors");
+    $("errorList").textContent = data.errors.map(e =>
+      "line " + e.line + ": error: " + e.message + (e.snippet.trim() ? "\n    " + e.snippet.trim() : "")
+    ).join("\n\n") + "\n\n(checked with " + data.checker + ")";
+    $("errors").hidden = false;
+    $("errors").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function show(data) {
+    if (!data.ok) { showCompileErrors(data); return; }
+    $("errors").hidden = true;
+    const t = data.tests;
+    const head = $("testsHead");
+    head.textContent = t.summary;
+    head.className = "tests-head " + (t.failed ? "bad" : "ok");
+    $("testList").innerHTML = "";
+    t.results.forEach(r => {
+      const li = document.createElement("li");
+      li.className = r.status;
+      li.textContent = r.name;
+      if (r.message) li.title = r.message;
+      $("testList").appendChild(li);
+    });
+
+    // The report text is exactly what the terminal prints; its last part is the
+    // optimized code, which has its own panel below, so cut it from this one.
+    const cut = data.report.search(/\n=+\nOptimized Code\n/);
+    $("report").textContent = (cut === -1 ? data.report : data.report.slice(0, cut)).trim();
+    $("optimized").textContent = data.optimized_code;
+    $("results").hidden = false;
+    $("results").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  $("run").addEventListener("click", analyze);
+  $("runCode").addEventListener("click", runCode);
+  $("compare").addEventListener("click", compareOutputs);
+  $("clear").addEventListener("click", () => { $("code").value = ""; $("results").hidden = true; $("errors").hidden = true; $("runOut").hidden = true; setStatus(""); });
+
+  $("sample").addEventListener("click", async () => {
+    try {
+      const res = await fetch(API + "/sample");
+      $("code").value = (await res.json()).source_code.trim() + "\n";
+      setStatus("Sample loaded.");
+    } catch { setStatus("Cannot reach the backend.", true); }
+  });
+
+  $("file").addEventListener("change", e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => { $("code").value = reader.result; setStatus("Loaded " + f.name); };
+    reader.readAsText(f);
+    e.target.value = "";
+  });
+
+  $("copy").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText($("optimized").textContent); setStatus("Copied."); }
+    catch { setStatus("Copy failed. Select the code and copy it manually.", true); }
+  });
+
+  $("download").addEventListener("click", () => {
+    const url = URL.createObjectURL(new Blob([$("optimized").textContent], { type: "text/plain" }));
+    const a = Object.assign(document.createElement("a"), { href: url, download: "optimized.c" });
+    a.click(); URL.revokeObjectURL(url);
+  });
+
+  // Tab key inserts spaces in the code box instead of leaving it.
+  $("code").addEventListener("keydown", e => {
+    if (e.key !== "Tab") return;
+    e.preventDefault();
+    const el = e.target, s = el.selectionStart;
+    el.value = el.value.slice(0, s) + "    " + el.value.slice(el.selectionEnd);
+    el.selectionStart = el.selectionEnd = s + 4;
+  });
+</script>
+</body>
+</html>

@@ -1,116 +1,225 @@
+# Hybrid Interprocedural Call Graph Analyzer with Optimization Analysis
 
-# Interprocedural Whole-Program Optimizer (IPO Engine)
+BCSE307 Compiler Design Project (A16)
 
-**Course Code / Title:** BCSE307 — Compiler Design
+Paste or load a C program and the tool will:
 
-**Project Objective:** Builds a global call graph for a program and applies advanced industrial-grade interprocedural optimizations (Dead Procedure Elimination, Whole-Program Inlining, Constant Propagation, and Pointer Analysis) guided by cost-benefit heuristics.
+1. **Check it for compile errors.** Code with errors is rejected and nothing else is shown.
+2. **Build the call graph** (direct calls, function pointers, recursion and mutual recursion).
+3. **Analyze it:** reachability from `main`, strongly connected components, constant propagation and inline recommendations.
+4. **Generate optimized C code:** constant folding, inlining and dead-function removal.
+5. **Run the original and the optimized program** and compare their output, to prove the optimization did not change the behaviour.
+
+It works as a web dashboard, as a command-line tool and as a REST API.
 
 ---
 
-## Project Structure
+## 1. Requirements
 
-```text
+| What | Needed? | Notes |
+|---|---|---|
+| **Python 3.9 or newer** | Yes | Check with `python --version` |
+| **fastapi**, **uvicorn** | Yes (dashboard / API) | Installed by `requirements.txt` |
+| **pytest** | Only to run the tests with pytest | Installed by `requirements.txt` |
+| **gcc or clang** | Optional | If installed, the tool uses it to check and run programs (full C support). If not, the built-in checker and C interpreter are used automatically. |
+
+The analyzer itself uses only the Python standard library.
+
+---
+
+## 2. Setup (do this once)
+
+Open a terminal in the project folder (the one containing `api.py`).
+
+**Windows (PowerShell)**
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+(If `python` is not recognized, use `py` instead: `py -m venv .venv` and `py -m pip install -r requirements.txt`.
+You can also install just the two needed packages directly: `python -m pip install fastapi uvicorn`
+or `py -m pip install fastapi uvicorn`.)
+
+If PowerShell blocks the activate script, run
+`Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` and try again.
+
+**macOS / Linux**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+> Tip: always use `python -m pip ...` instead of plain `pip ...`. It avoids the
+> "pip is not recognized" error on Windows.
+
+---
+
+## 3. Run the dashboard
+
+```bash
+python -m uvicorn api:app --reload --port 8000
+```
+
+(If `python` is not recognized, or you get an error with the command above, use the Windows launcher instead:
+`py -m uvicorn api:app --reload --port 8000`)
+
+Then open **http://localhost:8000** in your browser. Keep the terminal open while you use the page.
+
+In the dashboard:
+
+| Button | What it does |
+|---|---|
+| **Analyze and optimize** | Compile-checks the code, then shows the test results ("N passed"), the full analysis report and the optimized code |
+| **Run code** | Runs your program and shows what it prints, plus its exit code |
+| **Run optimized & compare outputs** | (after analyzing) Runs the original and the optimized code side by side and shows whether the outputs match |
+| **Load sample** | Fills the box with a demo program |
+| **Open .c file** | Loads a `.c` file from your computer into the box |
+| **Entry function** | Where the analysis starts (default `main`) |
+
+Everything shown on the page is also printed in the terminal where uvicorn is running.
+
+The `404 /favicon.ico` line in the terminal is harmless: browsers ask for a tab icon and the server has none.
+
+---
+
+## 4. Run from the command line (no browser)
+
+```bash
+python analyzer_demo.py                          # built-in demo program
+python analyze_file.py tests/direct_calls.c      # any C file
+python analyze_file.py tests/recursion.c --entry main
+python analyze_file.py tests/direct_calls.c -o optimized.c     # save the optimized code
+python analyze_file.py tests/direct_calls.c --json out.json    # save the results as JSON
+```
+
+If the file has compile errors, the errors are printed and nothing else runs.
+
+---
+
+## 5. Run the tests
+
+The regression suite is `tests/test_analyzer.py` (29 tests: call-graph detection, recursion, pointers,
+constant propagation, inlining, compile-error detection, running programs and output comparison).
+
+```bash
+python -m pytest tests -v
+```
+
+(or `py -m pytest tests -v` on Windows if `python` is not recognized)
+
+Expected ending: `29 passed`.
+
+No pytest? This runs the same tests without it:
+
+```bash
+python -c "from runner import run_tests; r = run_tests(); print(r['summary'])"
+```
+
+---
+
+## 6. Project structure
+
+```
 .
-├── pipeline_driver.py   # End-to-end compiler pipeline + strict stage data interfaces
-├── ipo_engine.py        # Advanced real-world interprocedural optimization passes
-├── sample.c             # Example test program source
-├── sample.ll            # Pre-generated LLVM IR for sample.c (automatic fallback if Clang is absent)
-└── call_graph.png       # Auto-generated visual caller-callee program dependency graph
+├── api.py                 FastAPI server: dashboard + REST API
+├── runner.py              Glue used by the API (tests, report, run, compare)
+├── analyze_file.py        Command-line tool for any C file
+├── analyzer_demo.py       Demo program (also used by "Load sample")
+├── requirements.txt       Python packages
+├── frontend/
+│   └── index.html         The dashboard (plain HTML/CSS/JS, no build step)
+├── analyzer/              The analyzer package
+│   ├── pipeline.py        End-to-end driver: analyze_program()
+│   ├── extraction.py      Function extraction from C source
+│   ├── call_discovery.py  Direct calls and function-pointer discovery
+│   ├── type_analysis.py   Type-based indirect-call resolution
+│   ├── pointer_analysis.py Pointer-based indirect-call resolution
+│   ├── call_graph.py      Hybrid call-graph construction
+│   ├── reachability.py    Demand-driven reachability (worklist)
+│   ├── scc.py             Tarjan SCC / recursion detection
+│   ├── optimization.py    Constant propagation and inline heuristic
+│   ├── codegen.py         Optimized-code generation
+│   ├── syntax_check.py    Compile-error detection (gcc/clang or built-in)
+│   ├── interpreter.py     Built-in C interpreter (used when no compiler)
+│   ├── executor.py        Runs programs and compares two runs
+│   └── models.py          Function data model
+└── tests/
+    ├── test_analyzer.py   Regression tests
+    └── *.c                Sample C programs used by the tests
 ```
 
-## Setup & Requirements
+---
 
-Requires Python 3.8+.
+## 7. How it works
 
-Install the required visualization and graph packages:
+```
+C source
+  │
+  ├─ syntax_check      compile errors?  → stop and show the errors
+  │
+  ├─ extract_functions → build_call_graph (DIRECT / POINTER-REFINED / POINTER / TYPE-FALLBACK edges)
+  ├─ demand_driven_analysis (reachability)  → find_sccs (recursion)
+  ├─ constant_propagation → optimization_analysis (INLINE / DO NOT INLINE)
+  └─ generate_optimized_code
+        1. constant-fold calls with constant arguments      square(5)  →  25
+        2. inline functions marked INLINE                   add(n, 2)  →  (n + 2)
+        3. remove unreachable / fully inlined functions
+```
+
+The optimizer is deliberately conservative. It never touches recursive functions, comments or strings,
+and it keeps any function that is still referenced (for example through a function pointer).
+
+## 8. REST API
+
+All endpoints take JSON `{"source_code": "...", "entry": "main"}` unless noted.
+
+| Method and path | Purpose |
+|---|---|
+| `GET /` | The dashboard |
+| `GET /health` | Health check |
+| `GET /sample` | Demo program and its analysis |
+| `POST /analyze` | Analysis result as JSON, including `optimized_program` |
+| `POST /run` | Compile check, then test results, report and optimized code |
+| `POST /execute` | Run the program and return its output |
+| `POST /compare` | Run original and optimized code and compare them |
+
+Interactive API docs are at **http://localhost:8000/docs** while the server is running.
+
+---
+
+## 9. Limitations
+
+- Function extraction and analysis use regular expressions and brace matching, not a full C parser.
+- Only functions with a single `return <expression>;` and `int`/`long`/`float`/`double` parameters are folded or inlined.
+- The built-in compile checker catches syntax mistakes (missing `;`, unbalanced brackets, unterminated strings or comments). It cannot catch semantic errors such as undeclared variables. Install gcc to catch those too.
+- The built-in interpreter does not support `struct`, `union`, `typedef`, `malloc`/`free`, `scanf`, file I/O, function-like macros or `goto`. It tells you when a program uses one. With gcc installed, such programs run normally.
+- The server runs the programs you submit on your own computer. Use it locally, and do not expose it to the internet.
+
+## 10. Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `pip is not recognized` | Use `python -m pip install ...` (or `py -m pip ...`) |
+| `python is not recognized` | Try `py` instead of `python` (for example `py -m uvicorn api:app --reload --port 8000`). If that fails too, install Python from python.org and tick **Add python.exe to PATH**, then reopen the terminal |
+| `uvicorn is not recognized` | Do not type `uvicorn` on its own. Use `python -m uvicorn api:app --reload --port 8000` (or `py -m uvicorn ...`) |
+| `Could not import module "api"` | You are in the wrong folder. `cd` into the folder that contains `api.py` |
+| `Address already in use` | Another server is using the port. Stop it, or run with `--port 8001` and open that port instead |
+| Page says "Cannot reach the backend" | The uvicorn server is not running. Start it (section 3) |
+| `ModuleNotFoundError: fastapi` | Activate the virtual environment and run `python -m pip install -r requirements.txt` |
+
+## 11. Team workflow (Git)
 
 ```bash
-python -m pip install networkx matplotlib
+git pull                      # get the latest changes before you start
+# ... make your changes, run the tests ...
+git add .
+git commit -m "Describe what you changed"
+git push
 ```
 
-### Clang Compiler Integration
-
-Clang is optional. If installed, the pipeline compiles `.c` files fresh into LLVM IR (`.ll`). If not, it automatically falls back to the matching pre-generated `.ll` file to guarantee seamless demonstration.
-
-## Running the Pipeline
-
-Execute the end-to-end compilation and optimization pass driver:
-
-```bash
-python pipeline_driver.py sample.c
-```
-
-### Expected Terminal Output
-
-```text
-[1/4] Frontend: parsing sample.c
-[2/4] Building call graph
-        functions found: ['square', 'unused', 'calculate', 'main']
-        call edges:      [('calculate', 'square'), ('main', 'calculate')]
-[3/4] Running interprocedural analysis
-        inlinable candidates:   ['square', 'calculate']
-        unreachable functions:  {'unused'}
-[4/4] Applying optimizations + generating output
-        stats: {'functions_marked_inlinable': 2, 'functions_marked_dead': 1, 'dead_procedures_eliminated': 1, 'functions_inlined': 0, 'constants_propagated': 1, 'pointers_tracked': 0, 'alias_relations_analyzed': 0}
-Call graph diagram saved to: call_graph.png
-```
-
-An updated `call_graph.png` image is dynamically generated showing the structural caller → callee directed graph.
-
-## Pipeline Architecture & Data Contracts
-
-The pipeline is structured into 4 decoupled stages connected via strict dataclass contracts (ProgramIR → CallGraph → AnalysisResult → OptimizedIR). Modules remain modular and independent.
-
-| Stage | Function / Module | Status & Implementation | Owner |
-|---|---|---|---|
-| 1. Frontend / Parser | `run_frontend()` | Working (Clang + `.ll` fallback) | Member 2 |
-| 2. Call Graph Construction | `build_call_graph()` | Working reference implementation (`nx.DiGraph`) | Member 3 |
-| 3. Interprocedural Analysis | `run_interprocedural_analysis()` | Working (Reachability & single-caller detection) | Member 3 |
-| 4. Optimization Passes | `ipo_engine.py` | Fully Implemented (DPE, Inlining, ICP, Pointer Analysis) | Members 2 & 3 |
-| 5. Integration & Visuals | `run_pipeline()`, `visualize_call_graph()` | Working (NetworkX + Matplotlib rendering) | Member 1 |
-
-## Implemented Optimization Algorithms & Techniques
-
-Our engine implements four core production-level optimization techniques:
-
-### 1. Dead Procedure Elimination (DPE)
-
-Utilizes global call-graph reachability (`nx.descendants`) starting from the `main` entry point to identify and strip unreachable function blocks from the IR text.
-
-### 2. Whole-Program Function Inlining
-
-Scans single-caller functions (`in_degree == 1`) to evaluate and substitute call instructions with expanded callee bodies.
-
-### 3. Interprocedural Constant Propagation (ICP)
-
-Detects literal constant arguments passed across function boundaries to track data-flow values globally.
-
-### 4. Interprocedural Alias & Pointer Analysis
-
-Parses LLVM memory allocation instructions (`alloca`) to compute pointer references and potential alias intersections.
-
-## Current Architectural Limitations & Industrial Drawbacks
-
-When evaluating these optimization techniques against large-scale software systems, several real-world bottlenecks emerge:
-
-- **Code Bloat & Cache Thrashing (Inlining Paradox):** Aggressive whole-program function inlining duplicates code blocks. If a utility function is expanded across numerous call sites, the binary expands exponentially, triggering CPU Instruction-Cache (I-cache) misses and degrading performance.
-
-- **Compilation Time Explosion (Scalability Wall):** Global cross-module program analysis requires massive memory overhead. Traditional link-time optimization (LTO) scales poorly on multi-million line codebases.
-
-- **Dynamic Behavior & Pointer Aliasing Blind Spots:** Static call graphs fail when handling indirect function calls (function pointers) or dynamically loaded libraries (DLLs/.so), forcing compilers to fall back conservatively. Furthermore, precise pointer analysis is NP-hard, forcing a trade-off between compiler speed and alias precision.
-
-## Next Version Roadmap & Solutions
-
-To overcome current limitations, the next version (v3.0) will introduce:
-
-### 1. Cost-Benefit Heuristic Weighting for Inlining
-
-Implementing an algorithmic score evaluating estimated CPU cycles saved versus byte footprint expansion to prevent instruction cache thrashing.
-
-### 2. Context-Sensitive Interprocedural Profiling
-
-Integrating execution frequency metrics to prioritize optimization passes on hot execution loops.
-
-### 3. Indirect Call Resolution Passes
-
-Adding type-based analysis (CTA) to resolve function pointer targets safely in dynamic architectures.
+Run `python -m pytest tests -v` before every push.
