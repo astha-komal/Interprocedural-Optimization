@@ -19,7 +19,7 @@ optimization_analysis():
 import ast
 import re
 
-_NUMERIC_LITERAL_RE = re.compile(r"^-?\d+(\.\d+)?$")
+_NUMERIC_LITERAL_RE = re.compile(r"^(-?\d+(\.\d+)?|true|false)$")
 _SIMPLE_RETURN_RE = re.compile(r"^\{\s*return\s+(?P<expr>.+?)\s*;\s*\}$", re.DOTALL)
 
 
@@ -69,7 +69,10 @@ def _safe_eval_arithmetic(expr: str):
     """Evaluate a restricted arithmetic expression (+, -, *, /, //, %, **,
     parentheses, numeric literals only). Raises _UnsupportedExpression for
     anything else -- never calls Python's built-in eval()."""
-    tree = ast.parse(expr, mode="eval")
+    # Map C/C++ boolean literals to Python integers
+    py_expr = re.sub(r"\btrue\b", "1", expr)
+    py_expr = re.sub(r"\bfalse\b", "0", py_expr)
+    tree = ast.parse(py_expr, mode="eval")
     return _eval_node(tree.body)
 
 

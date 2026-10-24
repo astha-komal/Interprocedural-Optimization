@@ -15,11 +15,14 @@ import subprocess
 import tempfile
 
 from .interpreter import run_program
+from .syntax_check import is_cpp
 
 MAX_OUTPUT = 100_000
 
 
-def _find_compiler():
+def _find_compiler(cpp: bool = False):
+    if cpp:
+        return shutil.which("g++") or shutil.which("clang++") or shutil.which("gcc") or shutil.which("clang")
     return shutil.which("gcc") or shutil.which("clang")
 
 
@@ -28,14 +31,24 @@ def _clip(text: str) -> str:
     return text if len(text) <= MAX_OUTPUT else text[:MAX_OUTPUT] + "\n...[output truncated]"
 
 
-def _run_with_compiler(code: str, exe: str, timeout: float) -> dict:
+def _run_with_compiler(code: str, exe: str, timeout: float, cpp: bool = False) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
-        src, binary = os.path.join(tmp, "prog.c"), os.path.join(tmp, "prog.exe" if os.name == "nt" else "prog")
+        ext = ".cpp" if cpp else ".c"
+        lang = "c++" if cpp else "c"
+        src = os.path.join(tmp, "prog" + ext)
+        binary = os.path.join(tmp, "prog.exe" if os.name == "nt" else "prog")
         with open(src, "w", encoding="utf-8") as f:
             f.write(code)
-        build = subprocess.run([exe, "-O0", "-w", "-x", "c", src, "-o", binary, "-lm"],
-                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+        cmd = [exe, "-O0", "-w", "-x", lang, src, "-o", binary]
+        if not cpp:
+            cmd.append("-lm")
+        build = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         if build.returncode != 0:
+            # If C compilation failed, try with g++ if available
+            if not cpp:
+                cpp_exe = _find_compiler(cpp=True)
+                if cpp_exe and cpp_exe != exe:
+                    return _run_with_compiler(code, cpp_exe, timeout, cpp=True)
             msg = build.stderr.strip() or "build failed"
             if "main" in msg and "undefined" in msg:
                 msg = "The program has no main() function, so it cannot be run."
@@ -54,12 +67,13 @@ def _run_with_compiler(code: str, exe: str, timeout: float) -> dict:
 
 
 def run_c(code: str, timeout: float = 5.0) -> dict:
-    """Run a C program. Result keys: status, stdout, exit_code, error, runner."""
-    exe = _find_compiler()
+    """Run a C or C++ program. Result keys: status, stdout, exit_code, error, runner."""
+    cpp = is_cpp(code)
+    exe = _find_compiler(cpp)
     if exe:
         try:
-            result = _run_with_compiler(code, exe, timeout)
-            result["runner"] = "gcc/clang"
+            result = _run_with_compiler(code, exe, timeout, cpp)
+            result["runner"] = "g++/clang++" if cpp else "gcc/clang"
             result["stdout"] = _clip(result["stdout"])
             return result
         except Exception:

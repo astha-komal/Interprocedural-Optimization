@@ -2,7 +2,7 @@
 
 BCSE307 Compiler Design Project (A16)
 
-Paste or load a C program and the tool will:
+Paste or load a C or C++ program (.c / .cpp) and the tool will:
 
 1. **Check it for compile errors.** Code with errors is rejected and nothing else is shown.
 2. **Build the call graph** (direct calls, function pointers, recursion and mutual recursion).
@@ -21,7 +21,7 @@ It works as a web dashboard, as a command-line tool and as a REST API.
 | **Python 3.9 or newer** | Yes | Check with `python --version` |
 | **fastapi**, **uvicorn** | Yes (dashboard / API) | Installed by `requirements.txt` |
 | **pytest** | Only to run the tests with pytest | Installed by `requirements.txt` |
-| **gcc or clang** | Optional | If installed, the tool uses it to check and run programs (full C support). If not, the built-in checker and C interpreter are used automatically. |
+| **gcc / g++ or clang / clang++** | Optional | If installed, the tool uses it to check and run programs (full C/C++ support). If not, the built-in checker and interpreter are used automatically. |
 
 The analyzer itself uses only the Python standard library.
 
@@ -93,6 +93,7 @@ The `404 /favicon.ico` line in the terminal is harmless: browsers ask for a tab 
 python analyzer_demo.py                          # built-in demo program
 python analyze_file.py tests/direct_calls.c      # any C file
 python analyze_file.py tests/recursion.c --entry main
+python analyze_file.py tests/cpp_cases.cpp
 python analyze_file.py tests/direct_calls.c -o optimized.c     # save the optimized code
 python analyze_file.py tests/direct_calls.c --json out.json    # save the results as JSON
 ```
@@ -103,8 +104,8 @@ If the file has compile errors, the errors are printed and nothing else runs.
 
 ## 5. Run the tests
 
-The regression suite is `tests/test_analyzer.py` (32 tests: call-graph detection, direct/mutual/indirect recursion cycles, dead cycle elimination, pointers,
-constant propagation, inlining in and around cycles, compile-error detection, running programs and output comparison).
+The regression suite is `tests/test_analyzer.py` (34 tests: call-graph detection, direct/mutual/indirect recursion cycles, dead cycle elimination, pointers,
+constant propagation, inlining in and around cycles, compile-error detection, C++ syntax checking and optimization, running programs and output comparison).
 
 ```bash
 python -m pytest tests -v
@@ -112,7 +113,7 @@ python -m pytest tests -v
 
 (or `py -m pytest tests -v` on Windows if `python` is not recognized)
 
-Expected ending: `32 passed`.
+Expected ending: `34 passed`.
 
 No pytest? This runs the same tests without it:
 

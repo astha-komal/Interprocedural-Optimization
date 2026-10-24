@@ -17,11 +17,11 @@ import re
 from .models import Function
 
 # C keywords that can precede a function definition but are not types
-_CONTROL_KEYWORDS = {"if", "for", "while", "switch", "return", "sizeof"}
+_CONTROL_KEYWORDS = {"if", "for", "while", "switch", "return", "sizeof", "catch", "try", "throw"}
 
 _FUNC_SIG_RE = re.compile(
     r"""
-    (?P<ret>[A-Za-z_][\w\s\*]*?)        # return type (greedy-ish, non-capturing of name)
+    (?P<ret>[A-Za-z_][\w\s\*&:<>,]*?)   # return type (supports C & C++ types/references/namespaces)
     \s+
     (?P<name>[A-Za-z_]\w*)              # function name
     \s*\(\s*
@@ -116,10 +116,14 @@ def parse_parameters(param_str: str):
             # type only (prototype-style) or a bare name — treat whole as type, name unknown
             params.append((normalize_type(tokens[0]), f"_arg{len(params)}"))
             continue
-        name = tokens[-1].lstrip("*")
+        name = tokens[-1].lstrip("*&")
         star_count = tokens[-1].count("*") + sum(t.count("*") for t in tokens[:-1])
-        base_type = " ".join(tokens[:-1])
-        type_str = base_type + (" " + "*" * star_count if star_count else "")
+        has_ref = "&" in raw
+        base_tokens = [t.rstrip("&*") for t in tokens[:-1] if t.rstrip("&*")]
+        base_type = " ".join(base_tokens)
+        if not base_type:
+            base_type = tokens[0].rstrip("&*")
+        type_str = base_type + (" " + "*" * star_count if star_count else "") + ("&" if has_ref else "")
         params.append((normalize_type(type_str), name))
     return params
 

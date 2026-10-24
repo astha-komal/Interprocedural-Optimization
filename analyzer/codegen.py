@@ -112,7 +112,7 @@ def _locate_functions(text: str):
             if prev_end > 0:
                 prev_start = text.rfind("\n", 0, prev_end) + 1
                 prev = text[prev_start:prev_end].strip()
-                if prev and re.fullmatch(r"[A-Za-z_][\w\s\*]*", prev):
+                if prev and re.fullmatch(r"[A-Za-z_][\w\s\*&:<>,]*", prev):
                     start = prev_start
         start = max(start, last_end)
 
@@ -179,14 +179,21 @@ def _has_side_effects(arg: str) -> bool:
 # ---------------------------------------------------------------------------
 # Which functions are simple enough to fold / inline?
 # ---------------------------------------------------------------------------
-_TYPE_WORDS = {"int", "float", "double", "long", "short", "char", "unsigned", "signed"}
-_QUALIFIERS = {"static", "inline", "extern", "const", "register", "volatile"}
-_INT_TYPES = {"int", "long", "long int", "long long", "long long int"}
+_TYPE_WORDS = {
+    "int", "float", "double", "long", "short", "char", "unsigned", "signed",
+    "bool", "void", "true", "false", "auto"
+}
+_QUALIFIERS = {"static", "inline", "extern", "const", "register", "volatile", "constexpr"}
+_INT_TYPES = {"int", "long", "long int", "long long", "long long int", "bool"}
 _FLOAT_TYPES = {"float", "double"}
 
 
 def _clean_type(t: str) -> str:
-    return " ".join(w for w in t.split() if w not in _QUALIFIERS)
+    words = [w for w in t.split() if w not in _QUALIFIERS]
+    cleaned = " ".join(words)
+    if cleaned.endswith("&"):
+        cleaned = cleaned[:-1].strip()
+    return cleaned
 
 
 def _is_pure_expr(expr: str, params) -> bool:
@@ -200,7 +207,7 @@ def _is_pure_expr(expr: str, params) -> bool:
         return False
     if re.search(r"[A-Za-z_\)\]]\s*\.", expr):          # member access
         return False
-    free = set(re.findall(r"[A-Za-z_]\w*", expr)) - set(params) - _TYPE_WORDS
+    free = set(re.findall(r"[A-Za-z_]\w*", expr)) - set(params) - _TYPE_WORDS - {"true", "false"}
     return not free                                     # nothing but own params
 
 
@@ -220,7 +227,7 @@ def _collect_simple_functions(functions: dict, recursive_functions: set) -> dict
             continue
         ret = _clean_type(func.return_type)
         if ret in _INT_TYPES:
-            rkind = "int"
+            rkind = "bool" if ret == "bool" else "int"
         elif ret in _FLOAT_TYPES:
             rkind = "float"
         else:
@@ -283,13 +290,15 @@ def _make_fold_handler(info):
             value = _safe_eval_arithmetic(_subst(expr, dict(zip(pnames, args))))
         except (_UnsupportedExpression, SyntaxError, ZeroDivisionError, OverflowError):
             return None
-        if rkind == "int":
+        if rkind == "bool":
+            text = "true" if value else "false"
+        elif rkind == "int":
             if not isinstance(value, int) or abs(value) > 2**31 - 1:
                 return None
             text = str(value)
         else:
             text = repr(float(value))
-        return f"({text})" if value < 0 else text
+        return f"({text})" if (isinstance(value, (int, float)) and value < 0) else text
 
     return handler
 
@@ -328,7 +337,7 @@ def _make_inline_handler(info):
 def _strip_prototypes(gap: str, names) -> str:
     for n in sorted(names):
         gap = re.sub(
-            rf"(?:(?<=^)|(?<=[;\n]))[ \t]*[A-Za-z_][\w \t\*]*?\b{re.escape(n)}\s*\([^;{{}}]*\)\s*;[ \t]*\n?",
+            rf"(?:(?<=^)|(?<=[;\n]))[ \t]*[A-Za-z_][\w \t\*&:<>,]*?\b{re.escape(n)}\s*\([^;{{}}]*\)\s*;[ \t]*\n?",
             "", gap, flags=re.M,
         )
     return gap

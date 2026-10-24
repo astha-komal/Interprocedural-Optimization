@@ -32,6 +32,33 @@ from .extraction import extract_functions
 MAX_ERRORS = 10
 
 
+_CPP_HEADERS = {
+    "iostream", "vector", "string", "algorithm", "map", "set", "cmath",
+    "cstdio", "cstdlib", "fstream", "sstream", "memory", "utility",
+    "queue", "stack", "deque", "list", "array", "functional", "chrono",
+    "thread", "mutex", "type_traits", "iomanip", "limits", "numeric",
+    "iostream.h", "bitset", "cassert", "cstring", "cstddef"
+}
+
+
+def is_cpp(code: str) -> bool:
+    """Detect if code contains C++ specific features or headers."""
+    for m in re.finditer(r'#\s*include\s*<([a-z0-9_.]+)>', code, re.I):
+        if m.group(1).lower() in _CPP_HEADERS:
+            return True
+    if re.search(r'\b(using\s+namespace|namespace\s+\w+|std::|cout|cin|endl|nullptr|constexpr|class\s+\w+)\b', code):
+        return True
+    if re.search(r'\b(public|private|protected)\s*:', code):
+        return True
+    if re.search(r'\btemplate\s*<', code):
+        return True
+    if re.search(r'\b(new|delete)\s+[A-Za-z_]', code):
+        return True
+    if re.search(r'\b(catch|throw)\b', code):
+        return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # 1. real compiler
 # ---------------------------------------------------------------------------
@@ -42,17 +69,41 @@ _COMPILER_LINE_RE = re.compile(
 
 def _compiler_check(code: str):
     """Returns a list of (line, message) or None if no usable compiler."""
-    exe = shutil.which("gcc") or shutil.which("clang")
+    cpp = is_cpp(code)
+    if cpp:
+        exe = shutil.which("g++") or shutil.which("clang++") or shutil.which("gcc") or shutil.which("clang")
+        lang = "c++"
+    else:
+        exe = shutil.which("gcc") or shutil.which("clang")
+        lang = "c"
+
     if not exe:
         return None
     try:
         proc = subprocess.run(
-            [exe, "-fsyntax-only", "-x", "c", "-"],
+            [exe, "-fsyntax-only", "-x", lang, "-"],
             input=code, capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=15,
         )
     except Exception:
         return None
+
+    # If C compilation failed, but g++ is available, check if compiling as C++ succeeds
+    if not cpp and proc.returncode != 0:
+        cpp_exe = shutil.which("g++") or shutil.which("clang++")
+        if cpp_exe:
+            try:
+                proc_cpp = subprocess.run(
+                    [cpp_exe, "-fsyntax-only", "-x", "c++", "-"],
+                    input=code, capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=15,
+                )
+                if proc_cpp.returncode == 0:
+                    return []
+                proc = proc_cpp
+            except Exception:
+                pass
+
     errors = []
     for ln in proc.stderr.splitlines():
         m = _COMPILER_LINE_RE.match(ln.strip())
@@ -330,9 +381,10 @@ def check_syntax(code: str) -> dict:
     """Compiler if available, otherwise the built-in checker."""
     compiler_errors = _compiler_check(code)
     if compiler_errors is not None:
-        result = _package(code, compiler_errors, "gcc/clang")
+        checker_name = "g++/clang++" if is_cpp(code) else "gcc/clang"
+        result = _package(code, compiler_errors, checker_name)
         if result["ok"] and not extract_functions(code):
-            return _package(code, [(1, "no function definitions were found")], "gcc/clang")
+            return _package(code, [(1, "no function definitions were found")], checker_name)
         return result
     return builtin_check(code)
 

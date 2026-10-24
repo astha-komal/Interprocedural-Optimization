@@ -410,3 +410,53 @@ def test_T32_non_recursive_helper_inlined_inside_recursive_function():
     a, b = run_program(src), run_program(opt["code"])
     assert a["status"] == b["status"] == "ok"
     assert a["exit_code"] == b["exit_code"]
+
+# ---------------------------------------------------------------------------
+# T33+ -- C++ support: syntax checking, optimization, and execution
+# ---------------------------------------------------------------------------
+from analyzer.executor import run_c, compare_runs
+from analyzer.syntax_check import check_syntax, is_cpp
+
+
+def test_T33_cpp_code_syntax_and_optimization():
+    """T33: C++ code with iostream, namespaces, and references is accepted,
+    analyzed, constant-folded, and dead functions removed."""
+    src = _read("cpp_cases.cpp")
+    assert is_cpp(src) is True
+    check = check_syntax(src)
+    assert check["ok"] is True
+    assert "g++" in check["checker"] or "clang++" in check["checker"]
+
+    res = analyze_program(src, entry="main")
+    opt = res["optimized_program"]
+
+    # Verify square(5) was folded to 25
+    assert any(t["type"] == "CONSTANT_FOLD" and t["callee"] == "square" for t in opt["transformations"])
+    assert "int s = 25;" in opt["code"]
+
+    # Verify dead unused_function was removed
+    removed_names = [r["name"] for r in opt["removed_functions"]]
+    assert "unused_function" in removed_names
+    assert "unused_function(): unreachable from main()" in opt["code"]
+
+
+def test_T34_cpp_mutual_recursion_and_execution_comparison():
+    """T34: C++ mutual recursion is safely preserved, and running the optimized
+    C++ binary matches the original C++ output exactly."""
+    src = _read("cpp_cases.cpp")
+    res = analyze_program(src, entry="main")
+    cycle_analysis = res["cycle_analysis"]
+
+    # Mutual recursion is_even <-> is_odd is identified
+    mutual_cycles = [c for c in cycle_analysis["cycles"] if c["type"] == "MUTUAL_RECURSION"]
+    assert len(mutual_cycles) >= 1
+    assert mutual_cycles[0]["status"] == "REACHABLE"
+
+    # Both compile with g++ and produce identical outputs
+    opt_code = res["optimized_program"]["code"]
+    run_orig = run_c(src)
+    run_opt = run_c(opt_code)
+    assert run_orig["status"] == "ok"
+    assert run_opt["status"] == "ok"
+    cmp = compare_runs(run_orig, run_opt)
+    assert cmp["match"] is True

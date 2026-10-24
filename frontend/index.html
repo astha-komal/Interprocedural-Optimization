@@ -65,16 +65,15 @@
 <body>
 <main>
   <h1>Interprocedural Code Optimizer</h1>
-  <p class="sub">Paste or type C code, then analyze it. You get the test results, the full analysis report and the optimized code.</p>
+  <p class="sub">Paste or type C/C++ code, then analyze it. You get the test results, the full analysis report and the optimized code.</p>
 
-  <label for="code" class="sub" style="display:block;margin-bottom:6px">C source code</label>
+  <label for="code" class="sub" style="display:block;margin-bottom:6px">C/C++ source code</label>
   <textarea id="code" spellcheck="false" placeholder="Paste or type code here..."></textarea>
 
   <div class="bar">
     <button id="run" class="primary">Analyze and optimize</button>
     <button id="runCode" type="button">Run code</button>
     <button id="sample" type="button">Load sample</button>
-    <label class="filebtn" for="file">Open .c file</label>
     <input id="file" type="file" accept=".c,.h,.txt">
     <button id="clear" type="button">Clear</button>
     <label for="entry">Entry function</label>
@@ -112,7 +111,12 @@
         <div class="bar">
           <button id="compare" type="button" class="primary">Run optimized &amp; compare outputs</button>
           <button id="copy" type="button">Copy</button>
-          <button id="download" type="button">Download .c</button>
+          <label for="downloadLang">Language</label>
+<select id="downloadLang">
+  <option value="c">C (.c)</option>
+  <option value="cpp">C++ (.cpp)</option>
+</select>
+<button id="download" type="button">Download code</button>
         </div>
       </div>
       <pre id="optimized"></pre>
@@ -292,11 +296,25 @@
     catch { setStatus("Copy failed. Select the code and copy it manually.", true); }
   });
 
-  $("download").addEventListener("click", () => {
-    const url = URL.createObjectURL(new Blob([$("optimized").textContent], { type: "text/plain" }));
-    const a = Object.assign(document.createElement("a"), { href: url, download: "optimized.c" });
-    a.click(); URL.revokeObjectURL(url);
-  });
+  
+$("download").addEventListener("click", () => {
+    const code = $("optimized").textContent;
+    const lang = $("downloadLang").value;
+    const extension = lang === "cpp" ? "cpp" : "c";
+    const filename = lang === "cpp" ? "optimized.cpp" : "optimized.c";
+
+    const blob = new Blob([code], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+
+    a.href = url;
+    a.download = filename;
+    a.click();
+
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setStatus("Downloaded " + filename);
+});
+
 
   // Tab key inserts spaces in the code box instead of leaving it.
   $("code").addEventListener("keydown", e => {

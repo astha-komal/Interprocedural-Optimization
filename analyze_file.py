@@ -34,7 +34,7 @@ def human_readable_report(code: str, entry: str) -> dict:
         sys.exit(1)
 
     print("=" * 70)
-    print("Hybrid Interprocedural Call Graph Analyzer")
+    print("Hybrid Interprocedural Call Graph Analyzer (C / C++)")
     print("=" * 70)
     print(f"\nExtracted {len(functions)} function(s): {sorted(functions)}\n")
 
@@ -79,13 +79,13 @@ def human_readable_report(code: str, entry: str) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run the interprocedural call-graph + optimization analyzer on a C file."
+        description="Run the interprocedural call-graph + optimization analyzer on a C or C++ file."
     )
-    parser.add_argument("source_file", help="Path to the .c file to analyze")
+    parser.add_argument("source_file", help="Path to the .c or .cpp file to analyze")
     parser.add_argument("--entry", default="main", help="Entry-point function name (default: main)")
     parser.add_argument(
         "--output", "-o", default=None, metavar="OPT_FILE",
-        help="Write the optimized C code to this file.",
+        help="Write the optimized C/C++ code to this file.",
     )
     parser.add_argument(
         "--json", nargs="?", const="-", default=None, metavar="OUT_FILE",
